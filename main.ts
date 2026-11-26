@@ -11,7 +11,7 @@
 //   (default output dir is /output; the file is written as entry.png)
 
 import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { closeSync, fsyncSync, mkdirSync, openSync, readFileSync, writeSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -130,7 +130,16 @@ function main(): void {
   // the bytes and their hashes with the source.
   const sourceHash = sha256(bytes);
   mkdirSync(outDir, { recursive: true });
-  writeFileSync(outPath, bytes);
+  // Write the copy and flush it to disk (fsync) before the read-back,
+  // so the check below verifies the bytes actually stored on disk
+  // rather than only what the page cache still holds.
+  const fd = openSync(outPath, "w");
+  try {
+    writeSync(fd, bytes);
+    fsyncSync(fd);
+  } finally {
+    closeSync(fd);
+  }
   const back = readFileSync(outPath);
   if (!back.equals(bytes)) {
     fail("read-back of the written file differs from entry.png");
